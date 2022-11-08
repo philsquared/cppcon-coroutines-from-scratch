@@ -1,14 +1,16 @@
 #ifndef NANOQUANT_SERIALISATION_H
 #define NANOQUANT_SERIALISATION_H
 
-#include "../FObjects/FObject.h"
-#include "Ptr.h"
-#include "Repo.h"
-
+#include <span>
+#include <vector>
 #include <string>
+#include <optional>
+
+#include "BuildTask.h"
 
 namespace nq {
-    auto deserialise( Repo& repo, std::string const& id ) -> Ptr<FObject>;
+
+    auto deserialiseAll( std::vector<std::string> ids ) -> std::vector<BuildTask>;
 }
 
 #endif //NANOQUANT_SERIALISATION_H

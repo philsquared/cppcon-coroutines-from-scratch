@@ -12,10 +12,10 @@ namespace nq {
 
         struct FieldDeserialiser {
             std::string const& name;
-            Deserialiser& in;
+            Deserialiser const& in;
 
             template<typename T>
-            friend auto operator << ( T& field, FieldDeserialiser&& fd ) -> Deserialiser& {
+            friend auto operator << ( T& field, FieldDeserialiser&& fd ) -> Deserialiser const& {
                 field = fd.in.get<T>( fd.name );
                 return fd.in;
             }
@@ -30,7 +30,7 @@ namespace nq {
             return json[name].get<T>();
         }
 
-        auto operator [] ( std::string const& name ) -> FieldDeserialiser {
+        auto operator [] ( std::string const& name ) const -> FieldDeserialiser {
             return { name, *this };
         }
     };
