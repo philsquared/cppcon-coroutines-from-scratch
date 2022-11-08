@@ -38,29 +38,33 @@ namespace nq {
         }
     }
 
-    auto deserialiseAll( std::vector<std::string> ids ) -> std::vector<BuildTask> {
+    auto deserialiseAll( std::vector<std::string> ids ) -> LoadedObjectGenerator {
 
         // This part simulates retrieving the data from a remote datastore
-        std::vector<BuildTask> tasks;
-        tasks.reserve( ids.size() );
+        std::vector<Deserialiser> deserialisers;
+        deserialisers.reserve( ids.size() );
 
         for( auto const& id : ids ) {
             LOG( "loading: " << id );
-            Deserialiser in( loadAsJson( id ) );
-
-            LOG( "Building: " << id );
-            auto task = buildNamedObject( getTypeFromId( id ), std::move( in ));
-            LOG( "got build task for " << id );
-
-            task.setId( id );
-
-            tasks.emplace_back( std::move( task ) );
+            deserialisers.emplace_back( loadAsJson( id ) );
         }
 
         // Sleep for a bit to simulate datastore access latency
         using namespace std::chrono_literals;
         std::this_thread::sleep_for( 10ms );
 
-        return tasks;
+        // ---
+
+        // We'll now iterate the raw data and start building the objects,
+        // yielding partially "built" objects as we go
+        for( size_t i = 0; i < ids.size(); ++i ) {
+            auto const& id = ids[i];
+            LOG( "[" << i << "] Building: " << id );
+            auto task = buildNamedObject( getTypeFromId( id ), std::move( deserialisers[i] ));
+            LOG( "got build task for " << id );
+
+            task.setId( id );
+            co_yield std::move( task );
+        }
     }
 }

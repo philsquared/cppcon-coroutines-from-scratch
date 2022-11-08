@@ -57,7 +57,8 @@ namespace nq {
                 LOG( "loaded" );
                 toLoad.clear();
 
-                for( auto&& task :  buildTasks ) {
+                for( ; buildTasks.hasValue(); buildTasks.next() ) {
+                    auto task = std::move( buildTasks.currentTask() );
                     LOG( "Build loop for: " << task.getId() );
 
                     if( !resolveDependencies( task ) )
@@ -75,6 +76,7 @@ namespace nq {
         while( !toLoad.empty() );
 
         assert( incompleteTasks.empty() );
+        assert( nq::TaskTracker::diagnosticCount == 0 );
 
         // At this point all objects should be loaded and built
         std::vector<Ptr<FObject>> objects;

@@ -7,68 +7,48 @@
 #include "Dependency.h"
 #include "Ptr.h"
 #include "Log.h"
-#include "Dependencies.h"
-#include "Continuations.h"
+#include "TaskTracker.h"
 
+#include <coroutine>
 #include <span>
-#include <string>
 
 namespace nq {
 
-    struct DependencyAwaiter {
-        bool shouldSuspend;
-
-        bool ready() const noexcept {
-            return !shouldSuspend;
-        }
-        bool suspend( FrameHandle<> handle ) noexcept {
-            LOG("suspending");
-            return true;
-        }
-        void resume() noexcept {
-            LOG("resuming" );
-        }
-    };
-
-    class BuildTask {
+    class BuildTask : TaskTracker {
     public:
-
-        struct Data {
+        struct promise_type {
             std::string id;
-            std::vector<Dependency> dependencies;
+            std::span<Dependency> dependencies; // from awaiter
             Ptr<FObject> obj = nullptr;
 
-            auto get_return_object()                { return BuildTask( Handle::from_data( *this ) ); }
-            auto initial_suspend() const -> bool    { return false; }
+            // Coroutine invoked methods
+            auto get_return_object()            { return BuildTask( Handle::from_promise( *this ) ); }
+            auto initial_suspend() const        { return std::suspend_never{}; }
+            auto final_suspend() const noexcept { return std::suspend_always{}; }
             void return_value( Ptr<FObject>&& new_obj ) {
                 LOG( "Setting return object for " << id << " (" << new_obj.get() << ")" );
                 obj = std::move(new_obj);
             }
-
-            auto await_transform( Dependencies&& dependencies ) -> DependencyAwaiter {
-                this->dependencies = std::move( dependencies.unmetDependencies );
-                return DependencyAwaiter{ !this->dependencies.empty() };
-            }
+            void unhandled_exception() const    { std::terminate(); }
         };
-
-
-        using Handle = FrameHandle<Data>;
+    private:
+        using Handle = std::coroutine_handle<promise_type>;
         Handle handle;
-        auto data() const -> Data& {
+        auto promise() const -> promise_type& {
             assert( handle );
-            return handle.data();
+            return handle.promise();
         }
-
+    public:
         explicit BuildTask( Handle handle ) noexcept
         : handle( handle ) {
             assert( handle );
         }
         ~BuildTask() {
-            destroyFrame();
+            destroyCoroutine();
         }
-        void destroyFrame() {
+        void destroyCoroutine() {
             if( handle ) {
-                LOG( "(" << this << ") destroying frame Handle: " << handle.address() );
+                LOG( "(" << this << ") destroying coroutine Handle: " << handle.address() );
                 handle.destroy();
             }
             else
@@ -81,28 +61,28 @@ namespace nq {
             std::swap( handle, other.handle );
         }
         auto operator=( BuildTask&& other ) noexcept -> BuildTask& {
-            destroyFrame();
+            destroyCoroutine();
             handle = other.handle;
             other.handle = Handle();
             return *this;
         }
 
-        void setId( std::string const& id ) {
-            handle.data().id = id;
+        void setId(std::string const& id ) {
+            promise().id = id;
         }
         auto getId() const {
-            return handle.data().id;
+            return promise().id;
         }
 
         auto getDependencies() const -> std::span<Dependency> {
-            return handle.data().dependencies;
+            return promise().dependencies;
         }
 
-        auto operator <=> ( BuildTask const& other ) const noexcept -> std::weak_ordering;
-
+        auto operator <=> ( BuildTask const& other ) const noexcept {
+            return handle <=> other.handle;
+        }
         auto resume() const -> Ptr<FObject>;
     };
-
 
 } // namespace nq
 
