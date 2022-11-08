@@ -68,7 +68,7 @@ namespace nq {
 
             for( size_t i=incompleteTasks.size(); i > 0; --i ) {
                 if( resolveDependencies( incompleteTasks[i - 1] ) ) {
-                    incompleteTasks.erase( incompleteTasks.begin() + ( i - 1), incompleteTasks.end() );
+                    incompleteTasks.erase( incompleteTasks.begin() + (i-1), incompleteTasks.end() );
                 }
             }
         }

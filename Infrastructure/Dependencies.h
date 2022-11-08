@@ -29,6 +29,7 @@ namespace nq {
             unmetDependencies.emplace_back( std::move( dependentId), std::move( setter ) );
             return *this;
         }
+
     };
 
 } // namespace nq

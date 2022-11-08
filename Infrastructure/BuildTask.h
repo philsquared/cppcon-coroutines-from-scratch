@@ -8,60 +8,101 @@
 #include "Ptr.h"
 #include "Log.h"
 #include "Dependencies.h"
+#include "Continuations.h"
 
 #include <span>
+#include <string>
 
 namespace nq {
 
+    struct DependencyAwaiter {
+        bool shouldSuspend;
+
+        bool ready() const noexcept {
+            return !shouldSuspend;
+        }
+        bool suspend( FrameHandle<> handle ) noexcept {
+            LOG("suspending");
+            return true;
+        }
+        void resume() noexcept {
+            LOG("resuming" );
+        }
+    };
+
     class BuildTask {
-        using Continuation = std::function<Ptr<FObject>()>;
+    public:
+
         struct Data {
             std::string id;
             std::vector<Dependency> dependencies;
             Ptr<FObject> obj = nullptr;
-            Continuation continuation;
+
+            auto get_return_object()                { return BuildTask( Handle::from_data( *this ) ); }
+            auto initial_suspend() const -> bool    { return false; }
+            void return_value( Ptr<FObject>&& new_obj ) {
+                LOG( "Setting return object for " << id << " (" << new_obj.get() << ")" );
+                obj = std::move(new_obj);
+            }
+
+            auto await_transform( Dependencies&& dependencies ) -> DependencyAwaiter {
+                this->dependencies = std::move( dependencies.unmetDependencies );
+                return DependencyAwaiter{ !this->dependencies.empty() };
+            }
         };
-        std::unique_ptr<Data> data;
 
-    public:
-        BuildTask() : data( std::make_unique<Data>() ) {
-        }
-        template<typename T>
-        explicit(false) BuildTask( Ptr<T> obj ) : data( std::make_unique<Data>() ) {
-            data->obj = std::move( obj );
-        }
 
-        void continueTask( Continuation continuation ) {
-            data->continuation = std::move( continuation );
-        }
-        void continueWithDependencies( Dependencies&& dependencies, Continuation continuation ) {
-            data->dependencies = std::move( dependencies.unmetDependencies );
-            continueTask( std::move(continuation) );
+        using Handle = FrameHandle<Data>;
+        Handle handle;
+        auto data() const -> Data& {
+            assert( handle );
+            return handle.data();
         }
 
-        void setId(std::string const& id ) {
-            data->id = id;
+        explicit BuildTask( Handle handle ) noexcept
+        : handle( handle ) {
+            assert( handle );
+        }
+        ~BuildTask() {
+            destroyFrame();
+        }
+        void destroyFrame() {
+            if( handle ) {
+                LOG( "(" << this << ") destroying frame Handle: " << handle.address() );
+                handle.destroy();
+            }
+            else
+                LOG( "(" << this << ") empty/ moved-from" );
+        }
+
+        // move-only
+        BuildTask( BuildTask&& other ) noexcept {
+            assert( other.handle );
+            std::swap( handle, other.handle );
+        }
+        auto operator=( BuildTask&& other ) noexcept -> BuildTask& {
+            destroyFrame();
+            handle = other.handle;
+            other.handle = Handle();
+            return *this;
+        }
+
+        void setId( std::string const& id ) {
+            handle.data().id = id;
         }
         auto getId() const {
-            return data->id;
+            return handle.data().id;
         }
 
-        auto getDependencies() -> std::span<Dependency> {
-            return data->dependencies;
+        auto getDependencies() const -> std::span<Dependency> {
+            return handle.data().dependencies;
         }
 
-        auto operator <=> ( BuildTask const& other ) const noexcept -> std::weak_ordering {
-            auto cmp = data->id.compare( other.data->id );
-            if( cmp == 0 )
-                return std::weak_ordering::equivalent;
-            else if( cmp < 0 )
-                return std::weak_ordering::less;
-            else
-                return std::weak_ordering::greater;
-        }
+        auto operator <=> ( BuildTask const& other ) const noexcept -> std::weak_ordering;
 
         auto resume() const -> Ptr<FObject>;
     };
+
 
 } // namespace nq
 
